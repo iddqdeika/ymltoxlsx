@@ -18,17 +18,17 @@ func main() {
 	dir, err := os.Getwd()
 	if err != nil {
 		fmt.Println(err)
-		fmt.Println("не могу найти свой	путь, вырубаюсь")
-		fmt.Println("Нажмите ENTER для продолжения")
+		fmt.Println("cant find myself")
+		fmt.Println("press ENTER")
 		fmt.Scanln()
 	}
 	dir = dir + "\\"
 
-	dir = filepath.Dir("C:\\Users\\bolshakov\\go\\src\\ymltoxlsx\\")
+	//dir = filepath.Dir("C:\\Users\\bolshakov\\go\\src\\ymltoxlsx\\")
 
 	processDir(dir)
 
-	fmt.Println("Нажмите ENTER для продолжения")
+	fmt.Println("press ENTER")
 	fmt.Scanln()
 }
 
@@ -51,7 +51,7 @@ func processDir(dir string) {
 
 //convert file
 func convert(filename string) {
-	fmt.Println("начинаю " + filename)
+	fmt.Println("statring " + filename)
 	catalog, err := getCatalog(filename)
 	if err != nil {
 		fmt.Println(err)
@@ -63,7 +63,7 @@ func convert(filename string) {
 	xlsx.DeleteSheet("Sheet1")
 	newfilename := filename[0:len(filename)-len(filepath.Ext(filename))] + ".xlsx"
 	xlsx.SaveAs(newfilename)
-	fmt.Println(newfilename + " создан")
+	fmt.Println(newfilename + " created")
 }
 
 //parse YmlCatalog object from file
