@@ -1,9 +1,10 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/xml"
 	"fmt"
-	"github.com/360EntSecGroup-Skylar/excelize"
 	"golang.org/x/text/encoding"
 	"golang.org/x/text/encoding/charmap"
 	"io"
@@ -12,24 +13,45 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+
+	"github.com/360EntSecGroup-Skylar/excelize"
+	"gopkg.in/cheggaaa/pb.v1"
 )
 
+const HELLO = "YML to Excel converter"
+
 func main() {
+
 	dir, err := os.Getwd()
+
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println(err.Error())
 		fmt.Println("cant find myself")
 		fmt.Println("press ENTER")
 		fmt.Scanln()
 	}
 	dir = dir + "\\"
-
 	//dir = filepath.Dir("C:\\Users\\bolshakov\\go\\src\\ymltoxlsx\\")
 
 	processDir(dir)
 
 	fmt.Println("press ENTER")
 	fmt.Scanln()
+}
+
+func askForGetParams() bool {
+	fmt.Println("Do you need params page?")
+	fmt.Println("1 - YES")
+	fmt.Println("2 - NO")
+	reader := bufio.NewReader(os.Stdin)
+	r, _, err := reader.ReadRune()
+	if err != nil {
+		panic(err)
+	}
+	if r == bytes.Runes([]byte("1"))[0] {
+		return true
+	}
+	return false
 }
 
 //convert any file with .xml ext in dir
@@ -44,24 +66,29 @@ func processDir(dir string) {
 		dim := filepath.Ext(filename)
 		//fmt.Println(dim)
 		if dim == ".xml" {
-			convert(f.Name())
+			convert(f.Name(), askForGetParams())
 		}
 	}
 }
 
 //convert file
-func convert(filename string) {
+func convert(filename string, getParams bool) {
 	fmt.Println("statring " + filename)
 	catalog, err := getCatalog(filename)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println(err.Error())
 		return
 	}
 	xlsx := excelize.NewFile()
 	writeTable(xlsx, "offers", catalog.GetOfferTable())
-	//writeTable(xlsx,"params",catalog.GetParamsTable())
+	writeTable(xlsx, "categories", catalog.GetCategoryTable())
+	writeTable(xlsx, "categoryTree", catalog.GetCategoryTreeTable())
+	if getParams {
+		writeTable(xlsx, "params", catalog.GetParamsTable())
+	}
 	xlsx.DeleteSheet("Sheet1")
 	newfilename := filename[0:len(filename)-len(filepath.Ext(filename))] + ".xlsx"
+	fmt.Println("saving " + newfilename)
 	xlsx.SaveAs(newfilename)
 	fmt.Println(newfilename + " created")
 }
@@ -87,6 +114,8 @@ func decodeCatalog(filename string, decoder *encoding.Decoder) (Yml_catalog, err
 	if decoder != nil {
 		b.CharsetReader = func(charset string, input io.Reader) (io.Reader, error) {
 			switch charset {
+			case "Windows-1251":
+				fallthrough
 			case "windows-1251":
 				return decoder.Reader(input), nil
 			default:
@@ -96,6 +125,8 @@ func decodeCatalog(filename string, decoder *encoding.Decoder) (Yml_catalog, err
 	} else {
 		b.CharsetReader = func(charset string, input io.Reader) (io.Reader, error) {
 			switch charset {
+			case "Windows-1251":
+				fallthrough
 			case "windows-1251":
 				return input, nil
 			default:
@@ -113,6 +144,7 @@ func decodeCatalog(filename string, decoder *encoding.Decoder) (Yml_catalog, err
 
 //write Table object content to given xlsx file into sheet with given name
 func writeTable(xlsx *excelize.File, sheetname string, table Table) {
+	fmt.Println("\t" + "writing sheet \"" + sheetname + "\"...")
 	xlsx.NewSheet(sheetname)
 	for k, v := range table.Columns {
 		columnname := getColumnName(v)
@@ -120,12 +152,10 @@ func writeTable(xlsx *excelize.File, sheetname string, table Table) {
 	}
 	var i int
 
+	bar := pb.StartNew(len(table.Rows))
 	for k, v := range table.Rows {
 		i++
-		if i == 1000 {
-			i = 0
-			//fmt.Printf("%v готово из %v\r\n", k, len(table.Rows))
-		}
+		bar.Increment()
 		rowname := strconv.Itoa(k + 2)
 
 		//xlsx.SetSheetRow(sheetname, "A" + rowname,&sl)
@@ -133,7 +163,9 @@ func writeTable(xlsx *excelize.File, sheetname string, table Table) {
 			columnname := getColumnName(kk)
 			xlsx.SetCellValue(sheetname, columnname+rowname, vv)
 		}
+
 	}
+	bar.Finish()
 }
 
 //function to get column name by column number. supports up to 17526 columns
