@@ -5,17 +5,16 @@ import (
 	"bytes"
 	"encoding/xml"
 	"fmt"
+	"github.com/360EntSecGroup-Skylar/excelize"
 	"golang.org/x/text/encoding"
 	"golang.org/x/text/encoding/charmap"
+	"gopkg.in/cheggaaa/pb.v1"
 	"io"
 	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
 	"strconv"
-
-	"github.com/360EntSecGroup-Skylar/excelize"
-	"gopkg.in/cheggaaa/pb.v1"
 )
 
 const HELLO = "YML to Excel converter"
@@ -54,6 +53,21 @@ func askForGetParams() bool {
 	return false
 }
 
+func askForXlsx() bool {
+	fmt.Println("Do you need XLSX?")
+	fmt.Println("1 - YES")
+	fmt.Println("2 - NO, write to .txt")
+	reader := bufio.NewReader(os.Stdin)
+	r, _, err := reader.ReadRune()
+	if err != nil {
+		panic(err)
+	}
+	if r == bytes.Runes([]byte("1"))[0] {
+		return true
+	}
+	return false
+}
+
 //convert any file with .xml ext in dir
 func processDir(dir string) {
 	files, err := ioutil.ReadDir(dir)
@@ -66,31 +80,41 @@ func processDir(dir string) {
 		dim := filepath.Ext(filename)
 		//fmt.Println(dim)
 		if dim == ".xml" {
-			convert(f.Name(), askForGetParams())
+			convert(f.Name(), askForGetParams(), askForXlsx())
 		}
 	}
 }
 
 //convert file
-func convert(filename string, getParams bool) {
+func convert(filename string, getParams bool, toxlsx bool) {
 	fmt.Println("statring " + filename)
 	catalog, err := getCatalog(filename)
 	if err != nil {
 		fmt.Println(err.Error())
 		return
 	}
-	xlsx := excelize.NewFile()
-	writeTable(xlsx, "offers", catalog.GetOfferTable())
-	writeTable(xlsx, "categories", catalog.GetCategoryTable())
-	writeTable(xlsx, "categoryTree", catalog.GetCategoryTreeTable())
-	if getParams {
-		writeTable(xlsx, "params", catalog.GetParamsTable())
+	if toxlsx {
+		xlsx := excelize.NewFile()
+		writeTableToXlsx(xlsx, "offers", catalog.GetOfferTable())
+		writeTableToXlsx(xlsx, "categories", catalog.GetCategoryTable())
+		writeTableToXlsx(xlsx, "categoryTree", catalog.GetCategoryTreeTable())
+		if getParams {
+			writeTableToXlsx(xlsx, "params", catalog.GetParamsTable())
+		}
+		xlsx.DeleteSheet("Sheet1")
+		newfilename := filename[0:len(filename)-len(filepath.Ext(filename))] + ".xlsx"
+		fmt.Println("saving " + newfilename)
+		xlsx.SaveAs(newfilename)
+		fmt.Println(newfilename + " created")
+	} else {
+		writeTableToCsv(filename[0:len(filename)-len(filepath.Ext(filename))]+"_offers.txt", catalog.GetOfferTable())
+		writeTableToCsv(filename[0:len(filename)-len(filepath.Ext(filename))]+"_categories.txt", catalog.GetCategoryTable())
+		writeTableToCsv(filename[0:len(filename)-len(filepath.Ext(filename))]+"_categoryTree.txt", catalog.GetCategoryTreeTable())
+		if getParams {
+			writeTableToCsv(filename[0:len(filename)-len(filepath.Ext(filename))]+"_params.csv", catalog.GetParamsTable())
+		}
 	}
-	xlsx.DeleteSheet("Sheet1")
-	newfilename := filename[0:len(filename)-len(filepath.Ext(filename))] + ".xlsx"
-	fmt.Println("saving " + newfilename)
-	xlsx.SaveAs(newfilename)
-	fmt.Println(newfilename + " created")
+
 }
 
 //parse YmlCatalog object from file
@@ -143,7 +167,7 @@ func decodeCatalog(filename string, decoder *encoding.Decoder) (Yml_catalog, err
 }
 
 //write Table object content to given xlsx file into sheet with given name
-func writeTable(xlsx *excelize.File, sheetname string, table Table) {
+func writeTableToXlsx(xlsx *excelize.File, sheetname string, table Table) {
 	fmt.Println("\t" + "writing sheet \"" + sheetname + "\"...")
 	xlsx.NewSheet(sheetname)
 	for k, v := range table.Columns {
@@ -164,6 +188,57 @@ func writeTable(xlsx *excelize.File, sheetname string, table Table) {
 			xlsx.SetCellValue(sheetname, columnname+rowname, vv)
 		}
 
+	}
+	bar.Finish()
+}
+
+//write Table object content to given xlsx file into sheet with given name
+func writeTableToCsv(filename string, table Table) {
+	fmt.Println("\t" + "writing file \"" + filename + "\"...")
+
+	file, err := os.OpenFile(filename, os.O_APPEND|os.O_WRONLY, os.ModeAppend)
+	if err != nil {
+		file, err = os.Create(filename)
+	}
+	file.Close()
+
+	fileHandle, _ := os.OpenFile(filename, os.O_APPEND, 0666)
+	writer := bufio.NewWriter(fileHandle)
+	defer fileHandle.Close()
+
+	maxcol := 0
+	colMap := make(map[int]string)
+	for colName, colNum := range table.Columns {
+		colMap[colNum] = colName
+		if maxcol < colNum {
+			maxcol = colNum
+		}
+	}
+	data := ""
+	for i := 0; i < maxcol; i++ {
+		data += colMap[i] + "\t"
+	}
+	data += "\r\n"
+	fmt.Fprint(writer, data)
+
+	bar := pb.StartNew(len(table.Rows))
+	for _, row := range table.Rows {
+		maxcol := 0
+		for _, colNum := range table.Columns {
+			if _, ok := row.Cells[colNum]; ok {
+				if maxcol < colNum {
+					maxcol = colNum
+				}
+			}
+		}
+		data := ""
+		for i := 0; i < maxcol; i++ {
+			data += row.Cells[i] + "\t"
+		}
+		data += "\r\n"
+		fmt.Fprint(writer, data)
+		//file.Sync()
+		bar.Increment()
 	}
 	bar.Finish()
 }
